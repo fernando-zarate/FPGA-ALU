@@ -3,7 +3,7 @@
 module NBITS_DATA
 #
 (
-    parameter NB_DATA = 8,
+    parameter NB_DATA = 8
 )
 (
     input wire i_clock,
