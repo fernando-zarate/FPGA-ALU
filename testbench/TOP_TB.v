@@ -8,7 +8,7 @@ module TOP_TB;
 
     localparam NSW     = 8;
     localparam NB_DATA = 8;
-    localparam NLED    = 8;
+    localparam NLED    = 10;
 
     // Opcodes extendidos a 8 bits porque TOP usa OP_reg[7:0]
     localparam ADD = 8'b00100000;
@@ -31,6 +31,7 @@ module TOP_TB;
     reg BTN_A;
     reg BTN_B;
     reg BTN_OP;
+    reg BTN_RESET;
 
 
     // =====================================================
@@ -49,6 +50,8 @@ module TOP_TB;
     reg [7:0] random_OP;
 
     reg [NB_DATA-1:0] expected;
+    reg expected_zero;
+    reg expected_carry;
 
     integer i;
     integer errors;
@@ -65,6 +68,7 @@ module TOP_TB;
         .BTN_A(BTN_A),
         .BTN_B(BTN_B),
         .BTN_OP(BTN_OP),
+        .BTN_RESET(BTN_RESET),
         .LED(LED)
     );
 
@@ -108,6 +112,42 @@ module TOP_TB;
 
                 default:
                     calculate_expected = 8'b00000000;
+
+            endcase
+
+        end
+
+    endfunction
+
+
+    // =====================================================
+    // Función que calcula el carry/borrow esperado
+    // =====================================================
+
+    function calculate_expected_carry;
+
+        input [7:0] A;
+        input [7:0] B;
+        input [7:0] OP;
+
+        reg [8:0] extended_result;
+
+        begin
+
+            extended_result = 9'b000000000;
+
+            case (OP)
+
+                ADD: begin
+                    extended_result = {1'b0, A} + {1'b0, B};
+                    calculate_expected_carry = extended_result[8];
+                end
+
+                SUB:
+                    calculate_expected_carry = (A < B);
+
+                default:
+                    calculate_expected_carry = 1'b0;
 
             endcase
 
@@ -204,6 +244,7 @@ module TOP_TB;
         BTN_A  = 0;
         BTN_B  = 0;
         BTN_OP = 0;
+        BTN_RESET = 0;
 
         errors = 0;
 
@@ -271,6 +312,14 @@ module TOP_TB;
                     random_OP
                 );
 
+            expected_zero = (expected == 8'b00000000);
+            expected_carry =
+                calculate_expected_carry(
+                    random_A,
+                    random_B,
+                    random_OP
+                );
+
 
             // Dar tiempo para propagación combinacional
             #1;
@@ -280,16 +329,24 @@ module TOP_TB;
             // Chequeo automático
             // ---------------------------------------------
 
-            if (LED !== expected) begin
+            if (
+                LED[NB_DATA-1:0] !== expected ||
+                LED[8] !== expected_zero ||
+                LED[9] !== expected_carry
+            ) begin
 
                 $display(
-                    "ERROR Test %0d: A=%h B=%h OP=%b LED=%h Expected=%h",
+                    "ERROR Test %0d: A=%h B=%h OP=%b LED_RESULT=%h Expected=%h LED_ZERO=%b ExpectedZero=%b LED_CARRY=%b ExpectedCarry=%b",
                     i,
                     random_A,
                     random_B,
                     random_OP,
-                    LED,
-                    expected
+                    LED[NB_DATA-1:0],
+                    expected,
+                    LED[8],
+                    expected_zero,
+                    LED[9],
+                    expected_carry
                 );
 
                 errors = errors + 1;
