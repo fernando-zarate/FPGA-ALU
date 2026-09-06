@@ -12,14 +12,15 @@ module NBITS_DATA
     input wire [NB_DATA -1 : 0] i_data,
 
     output reg [NB_DATA -1 : 0] o_data
-    // ¿porque usamos reg y no wire? por que a la variable o_data le asignamos su valor dentro de un bloque procedural 
+    // ¿porque usamos reg y no wire? por que a la variable o_data le 
+    // asignamos su valor dentro de un bloque procedural 
 );
 
     
     always @(posedge i_clock) begin
         
         if (i_reset)
-            o_data = {NB_DATA{1'b0}};
+            o_data <= {NB_DATA{1'b0}};
         
         else if (i_enable)
             o_data <=i_data; 
