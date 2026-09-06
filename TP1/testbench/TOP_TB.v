@@ -8,17 +8,22 @@ module TOP_TB;
 
     localparam NSW     = 8;
     localparam NB_DATA = 8;
+    localparam NB_OP   = 6;
     localparam NLED    = 10;
 
-    // Opcodes extendidos a 8 bits porque TOP usa OP_reg[7:0]
-    localparam ADD = 8'b00100000;
-    localparam SUB = 8'b00100010;
-    localparam AND = 8'b00100100;
-    localparam OR  = 8'b00100101;
-    localparam XOR = 8'b00100110;
-    localparam SRA = 8'b00000011;
-    localparam SRL = 8'b00000010;
-    localparam NOR = 8'b00100111;
+
+    // =====================================================
+    // Opcodes
+    // =====================================================
+
+    localparam [NB_OP-1:0] ADD = 6'b100000;
+    localparam [NB_OP-1:0] SUB = 6'b100010;
+    localparam [NB_OP-1:0] AND = 6'b100100;
+    localparam [NB_OP-1:0] OR  = 6'b100101;
+    localparam [NB_OP-1:0] XOR = 6'b100110;
+    localparam [NB_OP-1:0] SRA = 6'b000011;
+    localparam [NB_OP-1:0] SRL = 6'b000010;
+    localparam [NB_OP-1:0] NOR = 6'b100111;
 
 
     // =====================================================
@@ -47,7 +52,7 @@ module TOP_TB;
 
     reg [NB_DATA-1:0] random_A;
     reg [NB_DATA-1:0] random_B;
-    reg [7:0] random_OP;
+    reg [NB_OP-1:0] random_OP;
 
     reg [NB_DATA-1:0] expected;
     reg expected_zero;
@@ -62,7 +67,12 @@ module TOP_TB;
     // Instancia del TOP
     // =====================================================
 
-    TOP dut (
+    TOP #(
+        .NSW(NSW),
+        .NB_DATA(NB_DATA),
+        .NB_OP(NB_OP),
+        .NLED(NLED)
+    ) dut (
         .CLK(CLK),
         .SW(SW),
         .BTN_A(BTN_A),
@@ -74,28 +84,28 @@ module TOP_TB;
 
 
     // =====================================================
-    // Generación de clock
+    // Generación del clock
     //
-    // Periodo = 10 ns -> 100 MHz
-    // Igual al clock de la Basys 3
+    // Periodo = 10 ns
+    // Frecuencia = 100 MHz
     // =====================================================
 
     initial begin
-        CLK = 0;
+        CLK = 1'b0;
     end
 
     always #5 CLK = ~CLK;
 
 
     // =====================================================
-    // Función que calcula el resultado esperado
+    // Función: resultado esperado
     // =====================================================
 
-    function [7:0] calculate_expected;
+    function [NB_DATA-1:0] calculate_expected;
 
-        input [7:0] A;
-        input [7:0] B;
-        input [7:0] OP;
+        input [NB_DATA-1:0] A;
+        input [NB_DATA-1:0] B;
+        input [NB_OP-1:0] OP;
 
         begin
 
@@ -111,7 +121,7 @@ module TOP_TB;
                 NOR: calculate_expected = ~(A | B);
 
                 default:
-                    calculate_expected = 8'b00000000;
+                    calculate_expected = {NB_DATA{1'b0}};
 
             endcase
 
@@ -121,26 +131,26 @@ module TOP_TB;
 
 
     // =====================================================
-    // Función que calcula el carry/borrow esperado
+    // Función: carry / borrow esperado
     // =====================================================
 
     function calculate_expected_carry;
 
-        input [7:0] A;
-        input [7:0] B;
-        input [7:0] OP;
+        input [NB_DATA-1:0] A;
+        input [NB_DATA-1:0] B;
+        input [NB_OP-1:0] OP;
 
-        reg [8:0] extended_result;
+        reg [NB_DATA:0] extended_result;
 
         begin
 
-            extended_result = 9'b000000000;
+            extended_result = {(NB_DATA + 1){1'b0}};
 
             case (OP)
 
                 ADD: begin
                     extended_result = {1'b0, A} + {1'b0, B};
-                    calculate_expected_carry = extended_result[8];
+                    calculate_expected_carry = extended_result[NB_DATA];
                 end
 
                 SUB:
@@ -157,18 +167,16 @@ module TOP_TB;
 
 
     // =====================================================
-    // Task para cargar A
+    // Task: cargar A
     // =====================================================
 
     task load_A;
 
-        input [7:0] value;
+        input [NB_DATA-1:0] value;
 
         begin
 
             SW = value;
-
-            // Se activa antes del flanco positivo
             BTN_A = 1'b1;
 
             @(posedge CLK);
@@ -183,17 +191,16 @@ module TOP_TB;
 
 
     // =====================================================
-    // Task para cargar B
+    // Task: cargar B
     // =====================================================
 
     task load_B;
 
-        input [7:0] value;
+        input [NB_DATA-1:0] value;
 
         begin
 
             SW = value;
-
             BTN_B = 1'b1;
 
             @(posedge CLK);
@@ -208,17 +215,16 @@ module TOP_TB;
 
 
     // =====================================================
-    // Task para cargar opcode
+    // Task: cargar opcode
     // =====================================================
 
     task load_OP;
 
-        input [7:0] value;
+        input [NB_OP-1:0] value;
 
         begin
 
-            SW = value;
-
+            SW = {{(NSW-NB_OP){1'b0}}, value};
             BTN_OP = 1'b1;
 
             @(posedge CLK);
@@ -238,33 +244,55 @@ module TOP_TB;
 
     initial begin
 
-        // Estado inicial de las entradas
-        SW     = 0;
+        // -------------------------------------------------
+        // Inicialización
+        // -------------------------------------------------
 
-        BTN_A  = 0;
-        BTN_B  = 0;
-        BTN_OP = 0;
-        BTN_RESET = 0;
+        SW = {NSW{1'b0}};
+
+        BTN_A = 1'b0;
+        BTN_B = 1'b0;
+        BTN_OP = 1'b0;
+        BTN_RESET = 1'b0;
 
         errors = 0;
 
 
-        // Esperamos un poco antes de comenzar
-        #20;
+        // -------------------------------------------------
+        // Reset inicial
+        // -------------------------------------------------
+
+        BTN_RESET = 1'b1;
+
+        @(posedge CLK);
+
+        #1;
+
+        BTN_RESET = 1'b0;
+
+
+        // Esperar antes de comenzar las pruebas
+        #10;
 
 
         // =================================================
-        // 1000 pruebas con entradas aleatorias
+        // 1000 pruebas aleatorias
         // =================================================
 
         for (i = 0; i < 1000; i = i + 1) begin
 
-            // Generación de operandos aleatorios
+            // ---------------------------------------------
+            // Generación aleatoria de operandos
+            // ---------------------------------------------
+
             random_A = $random;
             random_B = $random;
 
 
+            // ---------------------------------------------
             // Selección aleatoria de operación
+            // ---------------------------------------------
+
             op_index = $random;
 
             if (op_index < 0)
@@ -291,20 +319,18 @@ module TOP_TB;
 
 
             // ---------------------------------------------
-            // Simulación del uso real de la Basys 3
+            // Simulación de la carga de operandos
             // ---------------------------------------------
 
-            // Colocar A en switches y pulsar BTN_A
             load_A(random_A);
-
-            // Colocar B en switches y pulsar BTN_B
             load_B(random_B);
-
-            // Colocar opcode en switches y pulsar BTN_OP
             load_OP(random_OP);
 
 
-            // Calcular resultado que debería entregar la ALU
+            // ---------------------------------------------
+            // Cálculo del resultado esperado
+            // ---------------------------------------------
+
             expected =
                 calculate_expected(
                     random_A,
@@ -312,7 +338,9 @@ module TOP_TB;
                     random_OP
                 );
 
-            expected_zero = (expected == 8'b00000000);
+            expected_zero =
+                (expected == {NB_DATA{1'b0}});
+
             expected_carry =
                 calculate_expected_carry(
                     random_A,
@@ -336,7 +364,7 @@ module TOP_TB;
             ) begin
 
                 $display(
-                    "ERROR Test %0d: A=%h B=%h OP=%b LED_RESULT=%h Expected=%h LED_ZERO=%b ExpectedZero=%b LED_CARRY=%b ExpectedCarry=%b",
+                    "ERROR Test %0d: A=%h B=%h OP=%b Result=%h Expected=%h Zero=%b ExpectedZero=%b Carry=%b ExpectedCarry=%b",
                     i,
                     random_A,
                     random_B,
