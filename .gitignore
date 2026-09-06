@@ -1,0 +1,36 @@
+# =========================
+# Vivado generated files
+# =========================
+
+# Vivado project generated directories
+*.cache/
+*.runs/
+*.sim/
+*.gen/
+*.hw/
+*.ip_user_files/
+
+# Vivado temporary files
+.Xil/
+*.jou
+*.log
+*.str
+*.tmp
+
+# Simulation
+xsim.dir/
+*.wdb
+*.vcd
+*.pb
+
+# Generated reports / implementation files
+*.dcp
+*.bit
+*.bin
+
+# WebTalk
+*.xml
+*.html
+*.zip
+
+*.atl

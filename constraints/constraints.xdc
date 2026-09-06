@@ -52,6 +52,10 @@ set_property IOSTANDARD LVCMOS33 [get_ports BTN_B]
 set_property PACKAGE_PIN U18 [get_ports BTN_OP]
 set_property IOSTANDARD LVCMOS33 [get_ports BTN_OP]
 
+## BTNU -> Reset registros
+set_property PACKAGE_PIN T18 [get_ports BTN_RESET]
+set_property IOSTANDARD LVCMOS33 [get_ports BTN_RESET]
+
 
 ## =========================================================
 ## LEDS
@@ -80,3 +84,9 @@ set_property IOSTANDARD LVCMOS33 [get_ports {LED[6]}]
 
 set_property PACKAGE_PIN V14 [get_ports {LED[7]}]
 set_property IOSTANDARD LVCMOS33 [get_ports {LED[7]}]
+
+set_property PACKAGE_PIN V13 [get_ports {LED[8]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {LED[8]}]
+
+set_property PACKAGE_PIN V3 [get_ports {LED[9]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {LED[9]}]
