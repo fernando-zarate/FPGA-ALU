@@ -1,5 +1,8 @@
 # Trabajo Práctico 1: Implementación de una ALU en FPGA
 
+### Profesor: Martin Pereyra
+### Alumnos: Agustín Álvarez y Fernando Zarate.
+
 ## Introducción
 
 El objetivo del primer trabajo práctico de Arquitectura de Computadoras fue implementar una Unidad Aritmético Lógica (ALU) en FPGA. La ALU desarrollada permite ejecutar operaciones aritméticas, lógicas y de desplazamiento sobre dos operandos de entrada.
