@@ -34,3 +34,6 @@ xsim.dir/
 *.zip
 
 *.atl
+
+# User generated files
+*.pdf
