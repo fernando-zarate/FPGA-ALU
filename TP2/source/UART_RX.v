@@ -84,7 +84,7 @@ module UART_RX
             tick_counter <= 4'd0;
         end
         else if (i_rate) begin
-            if (tick_counter == 4'd15) begin
+            if ((state == START && tick_counter == 4'd7) ||tick_counter == 4'd15) begin
                 tick_counter <= 4'd0;
             end
             else begin
