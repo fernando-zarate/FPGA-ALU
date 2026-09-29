@@ -64,7 +64,7 @@ IDLE → START → DATA → STOP
   ↑                       │
   └───────────────────────┘
 ```
-Cuando se detecta la caida a "0" en `i_rx` pasamos de IDLE a START. Dentro de START, a mitad del oversampling vefificamos nuevamente que `i_rx` este en "0" para pasar a DATA.
+Cuando se detecta la caida a "0" en `i_rx` pasamos de IDLE a START. Dentro de START, a mitad del oversampling verificamos nuevamente que `i_rx` este en "0" para pasar a DATA.
 Al momento de pasar a DATA inicializamos un contador de 16 para muestrear los datos a la mitad del período del bit.
 
 Una vez recibidos los 8 bits y el bit de stop, genera `o_done`, indicando que hay un nuevo dato disponible.
