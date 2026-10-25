@@ -1,98 +1,140 @@
 `timescale 1ns / 1ps
 
-module TOP
-#
-(
-    parameter DATA_WIDTH  = 64,
-    parameter INSTR_WIDTH = 32
-)
-(
-    input wire clk,
-    input wire reset
+// ============================================================================
+// MÓDULO TOP PRINCIPAL 
+// Conecta los periféricos físicos UART, la DEBUG_UNIT y el procesador PIPELINE.
+// ============================================================================
+
+module TOP #(
+    parameter CLK_FREQ     = 100_000_000, // Reloj de 100 MHz de la placa Basys3
+    parameter BAUD_RATE    = 9_600,       // Velocidad en baudios
+    parameter OVERSAMPLING = 16,          // Muestreo de la UART
+    parameter NB_DATA      = 8,           // Trama de 8 bits
+    parameter DATA_WIDTH   = 64,          // Datos de 64 bits del procesador
+    parameter INSTR_WIDTH  = 32,          // Instrucciones de 32 bits
+    parameter ADDR_WIDTH   = 64           // Direcciones de 64 bits
+)(
+    input  wire i_clock,   // Mapeado a la W5 de la Basys3
+    input  wire i_reset,   // Mapeado al pulsador T18 de la Basys3
+    input  wire i_uart_rx, // Mapeado al pin B18 (Recepción UART)
+    output wire o_uart_tx  // Mapeado al pin A18 (Transmisión UART)
 );
-    // Señales de interconexión IF
-    wire [DATA_WIDTH-1:0]  pc_curr, pc_next;
-    wire [INSTR_WIDTH-1:0] instr_if;
 
-    // Señales de interconexión ID
-    wire [INSTR_WIDTH-1:0] instr_id;
-    wire [DATA_WIDTH-1:0]  rdata1_id, rdata2_id;
+    // --- Interconexiones de Reloj e Interfaces UART ---
+    wire rate;
 
-    // Señales de interconexión EX
-    wire [DATA_WIDTH-1:0]  rdata1_ex, rdata2_ex;
+    wire [NB_DATA-1:0] uart_rx_data;
+    wire               uart_rx_done;
+
+    wire [NB_DATA-1:0] rx_data;
+    wire               rx_empty;
+    wire               rx_rd;
+
+    wire [NB_DATA-1:0] debug_tx_data;
+    wire               debug_tx_wr;
+    wire               tx_full;
+
+    wire [NB_DATA-1:0] uart_tx_data;
+    wire               uart_tx_start;
+    wire               uart_tx_done;
+
+    // --- Interconexiones entre DEBUG_UNIT y PIPELINE ---
+    wire                  pipeline_reset;
+    wire                  pipeline_clk_en;
+
+    wire                  imem_we;
+    wire [ADDR_WIDTH-1:0] imem_addr;
+    wire [INSTR_WIDTH-1:0]imem_data;
+
+    wire [4:0]            debug_reg_addr;
+    wire [DATA_WIDTH-1:0] debug_reg_data;
+
+    wire [ADDR_WIDTH-1:0] pc_if, pc_id, pc_ex, pc_mem, pc_wb;
+    wire [INSTR_WIDTH-1:0]instr_id;
+    wire [DATA_WIDTH-1:0] rdata1_ex, rdata2_ex;
     wire [4:0]            rd_ex;
-    wire [DATA_WIDTH-1:0]  alu_res_ex;
-    wire                  zero_ex;
-
-    // Señales de interconexión MEM
-    wire                  zero_mem;
-    wire [DATA_WIDTH-1:0]  alu_res_mem;
+    wire [DATA_WIDTH-1:0] alu_res_mem;
     wire [4:0]            rd_mem;
-
-    // Señales de interconexión WB
-    wire [DATA_WIDTH-1:0]  alu_res_wb;
+    wire [DATA_WIDTH-1:0] alu_res_wb;
     wire [4:0]            rd_wb;
 
-    // IF
-    PC #(DATA_WIDTH) u_pc (
-        .clk(clk), .reset(reset), .pc_in(pc_next), .pc_out(pc_curr)
+    // ------------------------------------------------------------------------
+    // 1. GENERADOR DE TICK DE BAUDIOS
+    // ------------------------------------------------------------------------
+    BAUD_RATE_GENERATOR #(
+        .CLK_FREQ(CLK_FREQ), .BAUD_RATE(BAUD_RATE), .OVERSAMPLING(OVERSAMPLING)
+    ) u_baud_generator (
+        .clk(i_clock), .reset(i_reset), .rate(rate)
     );
 
-    ADDER_PC #(DATA_WIDTH) u_adder_pc (
-        .pc_in(pc_curr), .pc_out(pc_next)
+    // ------------------------------------------------------------------------
+    // 2. RECEPTOR UART Y SU INTERFAZ
+    // ------------------------------------------------------------------------
+    UART_RX #(.NB_DATA(NB_DATA)) u_uart_rx (
+        .i_clock(i_clock), .i_reset(i_reset), .i_rx(i_uart_rx), .i_rate(rate),
+        .o_data(uart_rx_data), .o_done(uart_rx_done)
     );
 
-    INSTRUCTION_MEMORY #(DATA_WIDTH, INSTR_WIDTH) u_imem (
-        .address(pc_curr), .instruction(instr_if)
+    INTF_RX #(.NB_DATA(NB_DATA)) u_rx_intf (
+        .i_clock(i_clock), .i_reset(i_reset),
+        .i_rx_data(uart_rx_data), .i_rx_done(uart_rx_done),
+        .i_rd(rx_rd), .o_r_data(rx_data), .o_rx_empty(rx_empty)
     );
 
-    IF_ID #(INSTR_WIDTH) u_reg_if_id (
-        .clk(clk), .reset(reset), .instr_in(instr_if), .instr_out(instr_id)
+    // ------------------------------------------------------------------------
+    // 3. UNIDAD DE DEPURACIÓN (DEBUG_UNIT)
+    // ------------------------------------------------------------------------
+    DEBUG_UNIT #(
+        .NB_DATA(NB_DATA), .ADDR_WIDTH(ADDR_WIDTH),
+        .DATA_WIDTH(DATA_WIDTH), .INSTR_WIDTH(INSTR_WIDTH)
+    ) u_debug_unit (
+        .i_clock(i_clock), .i_reset(i_reset),
+        // Entrada desde UART RX
+        .i_rx_data(rx_data), .i_rx_empty(rx_empty), .o_rx_rd(rx_rd),
+        // Salida hacia UART TX
+        .i_tx_full(tx_full), .o_tx_data(debug_tx_data), .o_tx_wr(debug_tx_wr),
+        // Control hacia PIPELINE
+        .o_pipeline_reset(pipeline_reset), .o_pipeline_clk_en(pipeline_clk_en),
+        // Carga de programa a IMEM
+        .o_imem_we(imem_we), .o_imem_addr(imem_addr), .o_imem_data(imem_data),
+        // Entrada de estado del PIPELINE para DUMP
+        .i_pc_if(pc_if), .i_pc_id(pc_id), .i_pc_ex(pc_ex), .i_pc_mem(pc_mem), .i_pc_wb(pc_wb),
+        .i_instr_id(instr_id), .i_rdata1_ex(rdata1_ex), .i_rdata2_ex(rdata2_ex),
+        .i_rd_ex(rd_ex), .i_alu_res_mem(alu_res_mem), .i_rd_mem(rd_mem),
+        .i_alu_res_wb(alu_res_wb), .i_rd_wb(rd_wb),
+        // Consulta del Banco de Registros
+        .o_debug_reg_addr(debug_reg_addr), .i_debug_reg_data(debug_reg_data)
     );
 
-    // ID
-
-    REGISTER #(DATA_WIDTH) u_regfile (
-        .clk        (clk),
-        .reg_write  (1'b1),               // Habilitado para la instrucción ADD
-        .read_reg1  (instr_id[19:15]),    // rs1
-        .read_reg2  (instr_id[24:20]),    // rs2
-        .write_reg  (rd_wb),              // rd proveniente de MEM/WB
-        .write_data (alu_res_wb),         // Dato proveniente de MEM/WB
-        .read_data1 (rdata1_id),
-        .read_data2 (rdata2_id)
+    // ------------------------------------------------------------------------
+    // 4. PROCESADOR (PIPELINE)
+    // ------------------------------------------------------------------------
+    PIPELINE #(
+        .DATA_WIDTH(DATA_WIDTH), .INSTR_WIDTH(INSTR_WIDTH), .ADDR_WIDTH(ADDR_WIDTH)
+    ) u_pipeline (
+        .clk(i_clock), .reset(pipeline_reset), .clk_en(pipeline_clk_en),
+        .imem_we(imem_we), .imem_addr(imem_addr), .imem_data(imem_data),
+        .debug_reg_addr(debug_reg_addr), .debug_reg_data(debug_reg_data),
+        .o_pc_if(pc_if), .o_pc_id(pc_id), .o_pc_ex(pc_ex), .o_pc_mem(pc_mem), .o_pc_wb(pc_wb),
+        .o_instr_id(instr_id), .o_rdata1_ex(rdata1_ex), .o_rdata2_ex(rdata2_ex),
+        .o_rd_ex(rd_ex), .o_alu_res_mem(alu_res_mem), .o_rd_mem(rd_mem),
+        .o_alu_res_wb(alu_res_wb), .o_rd_wb(rd_wb)
     );
 
-    ID_EX #(DATA_WIDTH) u_reg_id_ex (
-        .clk(clk), .reset(reset),
-        .read_data1_in(rdata1_id), .read_data2_in(rdata2_id),
-        .rd_in(instr_id[11:7]),            // rd (bits 11:7)
-        .read_data1_out(rdata1_ex), .read_data2_out(rdata2_ex),
-        .rd_out(rd_ex)
+    // ------------------------------------------------------------------------
+    // 5. TRANSMISOR UART Y SU INTERFAZ
+    // ------------------------------------------------------------------------
+    INTF_TX #(.NB_DATA(NB_DATA)) u_tx_intf (
+        .i_clock(i_clock), .i_reset(i_reset),
+        .i_w_data(debug_tx_data), .i_wr(debug_tx_wr),
+        .i_tx_done(uart_tx_done), .o_tx_data(uart_tx_data),
+        .o_tx_start(uart_tx_start), .o_tx_full(tx_full)
     );
 
-    // EX
-
-    ALU #(DATA_WIDTH) u_alu (
-        .a(rdata1_ex), .b(rdata2_ex),
-        .alu_result(alu_res_ex), .zero(zero_ex)
+    UART_TX #(.NB_DATA(NB_DATA)) u_uart_tx (
+        .i_clock(i_clock), .i_reset(i_reset),
+        .i_data(uart_tx_data), .i_start(uart_tx_start), .i_rate(rate),
+        .o_tx(o_uart_tx), .o_done(uart_tx_done)
     );
-
-    EX_MEM #(DATA_WIDTH) u_reg_ex_mem (
-        .clk(clk), .reset(reset),
-        .zero_in(zero_ex), .alu_result_in(alu_res_ex), .rd_in(rd_ex),
-        .zero_out(zero_mem), .alu_result_out(alu_res_mem), .rd_out(rd_mem)
-    );
-
-    // MEM 
-
-    MEM_WB #(DATA_WIDTH) u_reg_mem_wb (
-        .clk(clk), .reset(reset),
-        .alu_result_in(alu_res_mem), .rd_in(rd_mem),
-        .alu_result_out(alu_res_wb), .rd_out(rd_wb)
-    );
-
-    // WB 
-    // No se usa por ahora.
 
 endmodule
