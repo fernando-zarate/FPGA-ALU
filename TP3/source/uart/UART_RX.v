@@ -57,14 +57,14 @@ module UART_RX
             end
 
             DATA: begin
-                if (i_rate && tick_counter == 4'd7) begin
+                if (i_rate && tick_counter == 4'd15) begin
                     if (bit_counter == NB_DATA-1) //cuando se recibieron todos los bits de datos, paso al estado de stop
                         next_state = STOP;
                 end
             end
 
             STOP: begin
-                if (i_rate && tick_counter == 4'd7)
+                if (i_rate && tick_counter == 4'd15)
                     next_state = IDLE;
             end
 
@@ -101,7 +101,7 @@ module UART_RX
         else if (state == IDLE || state == START) begin
             bit_counter <= 4'd0;
         end
-        else if (state == DATA && i_rate && tick_counter == 4'd7) begin
+        else if (state == DATA && i_rate && tick_counter == 4'd15) begin
             bit_counter <= bit_counter + 1'b1;
         end
     end
@@ -111,7 +111,7 @@ module UART_RX
         if (i_reset) begin
             shift_reg <= {NB_DATA{1'b0}};
         end
-        else if (state == DATA && i_rate && tick_counter == 4'd7) begin //muestreo a la mitad del bit
+        else if (state == DATA && i_rate && tick_counter == 4'd15) begin //muestreo a la mitad del bit
             shift_reg <= {i_rx, shift_reg[NB_DATA-1:1]};
             // i_rx entra por la izquierda y todos los demás bits se desplazan 
             //una posición hacia la derecha.
@@ -128,7 +128,7 @@ module UART_RX
             o_done <= 1'b0;
             //controlo que el bit de stop se haya recibido correctamente, 
             //y que haya pasado un tick completo
-            if (state == STOP && i_rate && tick_counter == 4'd7) begin 
+            if (state == STOP && i_rate && tick_counter == 4'd15) begin 
                 o_data <= shift_reg; //seteo el dato recibido en la salida
                 o_done <= 1'b1; //indico que se recibió un dato completo
             end
