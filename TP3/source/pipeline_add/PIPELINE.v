@@ -49,6 +49,17 @@ module PIPELINE #(
     wire [DATA_WIDTH-1:0]  alu_res_wb;
     wire [4:0]            rd_wb;
     wire [ADDR_WIDTH-1:0]  pc_id, pc_ex, pc_mem, pc_wb;
+    wire [1:0]            alu_op_id, alu_op_ex;
+    wire                  alu_src_id, alu_src_ex;
+    wire                  reg_write_id, reg_write_ex, reg_write_mem, reg_write_wb;
+    wire                  mem_to_reg_id, mem_to_reg_ex, mem_to_reg_mem, mem_to_reg_wb;
+    wire [DATA_WIDTH-1:0]  immediate_id, immediate_ex, alu_operand_b, write_data_wb;
+
+    // I-type immediate is only a mux input; no immediate instruction is enabled.
+    assign immediate_id = {{(DATA_WIDTH-12){instr_id[31]}}, instr_id[31:20]};
+    assign alu_operand_b = alu_src_ex ? immediate_ex : rdata2_ex;
+    // No data memory in this ADD-only pipeline; MemtoReg never selects this input.
+    assign write_data_wb = mem_to_reg_wb ? {DATA_WIDTH{1'b0}} : alu_res_wb;
 
     // Conexión de puertos de monitoreo para DEBUG_UNIT
     assign o_pc_if       = pc_curr;
@@ -91,14 +102,19 @@ module PIPELINE #(
     // -------------------------------------------------------------
     // ETAPA 2: ID
     // -------------------------------------------------------------
+    CONTROL_UNIT u_control (
+        .instruction(instr_id), .ALUOp(alu_op_id), .RegWrite(reg_write_id),
+        .ALUSrc(alu_src_id), .MemtoReg(mem_to_reg_id)
+    );
+
     REGISTER #(DATA_WIDTH) u_regfile (
         .clk            (clk),
         .reset          (reset),
-        .reg_write      (1'b1),               // Siempre activo para la instrucción ADD
+        .reg_write      (reg_write_wb && clk_en), // Commit only on enabled steps
         .read_reg1      (instr_id[19:15]),    // Extrae rs1
         .read_reg2      (instr_id[24:20]),    // Extrae rs2
         .write_reg      (rd_wb),              // rd que regresa desde WB
-        .write_data     (alu_res_wb),         // Resultado que regresa desde WB
+        .write_data     (write_data_wb),      // Selected WB result
         .read_data1     (rdata1_id),
         .read_data2     (rdata2_id),
         .debug_reg_addr (debug_reg_addr),
@@ -110,14 +126,19 @@ module PIPELINE #(
         .read_data1_in(rdata1_id), .read_data2_in(rdata2_id),
         .rd_in(instr_id[11:7]), .pc_in(pc_id),
         .read_data1_out(rdata1_ex), .read_data2_out(rdata2_ex),
-        .rd_out(rd_ex), .pc_out(pc_ex)
+        .rd_out(rd_ex), .pc_out(pc_ex),
+        .immediate_in(immediate_id), .immediate_out(immediate_ex),
+        .alu_op_in(alu_op_id), .alu_op_out(alu_op_ex),
+        .alu_src_in(alu_src_id), .alu_src_out(alu_src_ex),
+        .reg_write_in(reg_write_id), .reg_write_out(reg_write_ex),
+        .mem_to_reg_in(mem_to_reg_id), .mem_to_reg_out(mem_to_reg_ex)
     );
 
     // -------------------------------------------------------------
     // ETAPA 3: EX
     // -------------------------------------------------------------
     ALU #(DATA_WIDTH) u_alu (
-        .a(rdata1_ex), .b(rdata2_ex),
+        .a(rdata1_ex), .b(alu_operand_b), .alu_op(alu_op_ex),
         .alu_result(alu_res_ex), .zero(zero_ex)
     );
 
@@ -126,7 +147,9 @@ module PIPELINE #(
         .zero_in(zero_ex), .alu_result_in(alu_res_ex),
         .rd_in(rd_ex), .pc_in(pc_ex),
         .zero_out(zero_mem), .alu_result_out(alu_res_mem),
-        .rd_out(rd_mem), .pc_out(pc_mem)
+        .rd_out(rd_mem), .pc_out(pc_mem),
+        .reg_write_in(reg_write_ex), .reg_write_out(reg_write_mem),
+        .mem_to_reg_in(mem_to_reg_ex), .mem_to_reg_out(mem_to_reg_mem)
     );
 
     // -------------------------------------------------------------
@@ -135,7 +158,9 @@ module PIPELINE #(
     MEM_WB #(DATA_WIDTH, ADDR_WIDTH) u_reg_mem_wb (
         .clk(clk), .reset(reset), .clk_en(clk_en),
         .alu_result_in(alu_res_mem), .rd_in(rd_mem), .pc_in(pc_mem),
-        .alu_result_out(alu_res_wb), .rd_out(rd_wb), .pc_out(pc_wb)
+        .alu_result_out(alu_res_wb), .rd_out(rd_wb), .pc_out(pc_wb),
+        .reg_write_in(reg_write_mem), .reg_write_out(reg_write_wb),
+        .mem_to_reg_in(mem_to_reg_mem), .mem_to_reg_out(mem_to_reg_wb)
     );
 
 endmodule

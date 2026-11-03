@@ -12,17 +12,25 @@ module MEM_WB #(
     input  wire [ADDR_WIDTH-1:0]  pc_in,         // PC proveniente de MEM
     output reg  [DATA_WIDTH-1:0] alu_result_out,// Resultado enviado a escribir en RegFile
     output reg  [4:0]            rd_out,        // Registro destino rd enviado a RegFile
-    output reg  [ADDR_WIDTH-1:0]  pc_out         // PC en etapa de escritura final
+    output reg  [ADDR_WIDTH-1:0]  pc_out,        // PC en etapa de escritura final
+    input  wire                  reg_write_in,
+    input  wire                  mem_to_reg_in,
+    output reg                   reg_write_out,
+    output reg                   mem_to_reg_out
 );
     always @(posedge clk or posedge reset) begin
         if (reset) begin
             alu_result_out <= {DATA_WIDTH{1'b0}};
             rd_out         <= 5'b0;
             pc_out         <= {ADDR_WIDTH{1'b0}};
+            reg_write_out  <= 1'b0;
+            mem_to_reg_out <= 1'b0;
         end else if (clk_en) begin
             alu_result_out <= alu_result_in;
             rd_out         <= rd_in;
             pc_out         <= pc_in;
+            reg_write_out  <= reg_write_in;
+            mem_to_reg_out <= mem_to_reg_in;
         end
     end
 endmodule

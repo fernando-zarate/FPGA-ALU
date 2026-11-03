@@ -14,7 +14,11 @@ module EX_MEM #(
     output reg                   zero_out,
     output reg  [DATA_WIDTH-1:0] alu_result_out,// Resultado ALU hacia MEM/WB
     output reg  [4:0]            rd_out,        // Registro destino rd hacia MEM/WB
-    output reg  [ADDR_WIDTH-1:0]  pc_out         // PC que viaja hacia MEM
+    output reg  [ADDR_WIDTH-1:0]  pc_out,        // PC que viaja hacia MEM
+    input  wire                  reg_write_in,
+    input  wire                  mem_to_reg_in,
+    output reg                   reg_write_out,
+    output reg                   mem_to_reg_out
 );
     always @(posedge clk or posedge reset) begin
         if (reset) begin
@@ -22,11 +26,15 @@ module EX_MEM #(
             alu_result_out <= {DATA_WIDTH{1'b0}};
             rd_out         <= 5'b0;
             pc_out         <= {ADDR_WIDTH{1'b0}};
+            reg_write_out  <= 1'b0;
+            mem_to_reg_out <= 1'b0;
         end else if (clk_en) begin
             zero_out       <= zero_in;
             alu_result_out <= alu_result_in;
             rd_out         <= rd_in;
             pc_out         <= pc_in;
+            reg_write_out  <= reg_write_in;
+            mem_to_reg_out <= mem_to_reg_in;
         end
     end
 endmodule
