@@ -48,6 +48,9 @@ module TOP #(
 
     wire [4:0]            debug_reg_addr;
     wire [DATA_WIDTH-1:0] debug_reg_data;
+    wire                 debug_reg_we;
+    wire [4:0]           debug_write_addr;
+    wire [DATA_WIDTH-1:0] debug_write_data;
 
     wire [ADDR_WIDTH-1:0] pc_if, pc_id, pc_ex, pc_mem, pc_wb;
     wire [INSTR_WIDTH-1:0]instr_id;
@@ -97,6 +100,8 @@ module TOP #(
         .o_pipeline_reset(pipeline_reset), .o_pipeline_clk_en(pipeline_clk_en),
         // Carga de programa a IMEM
         .o_imem_we(imem_we), .o_imem_addr(imem_addr), .o_imem_data(imem_data),
+        .o_debug_reg_we(debug_reg_we), .o_debug_write_addr(debug_write_addr),
+        .o_debug_write_data(debug_write_data),
         // Entrada de estado del PIPELINE para DUMP
         .i_pc_if(pc_if), .i_pc_id(pc_id), .i_pc_ex(pc_ex), .i_pc_mem(pc_mem), .i_pc_wb(pc_wb),
         .i_instr_id(instr_id), .i_rdata1_ex(rdata1_ex), .i_rdata2_ex(rdata2_ex),
@@ -115,6 +120,8 @@ module TOP #(
         .clk(i_clock), .reset(pipeline_reset), .clk_en(pipeline_clk_en),
         .imem_we(imem_we), .imem_addr(imem_addr), .imem_data(imem_data),
         .debug_reg_addr(debug_reg_addr), .debug_reg_data(debug_reg_data),
+        .debug_reg_we(debug_reg_we), .debug_write_addr(debug_write_addr),
+        .debug_write_data(debug_write_data),
         .o_pc_if(pc_if), .o_pc_id(pc_id), .o_pc_ex(pc_ex), .o_pc_mem(pc_mem), .o_pc_wb(pc_wb),
         .o_instr_id(instr_id), .o_rdata1_ex(rdata1_ex), .o_rdata2_ex(rdata2_ex),
         .o_rd_ex(rd_ex), .o_alu_res_mem(alu_res_mem), .o_rd_mem(rd_mem),

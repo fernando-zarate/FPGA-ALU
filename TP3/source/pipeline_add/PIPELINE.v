@@ -18,6 +18,9 @@ module PIPELINE #(
     // Interfaz de Lectura de Registros (para DUMP de DEBUG_UNIT)
     input  wire [4:0]            debug_reg_addr,   // Dirección de registro a consultar
     output wire [DATA_WIDTH-1:0]  debug_reg_data,   // Valor del registro consultado
+    input  wire                   debug_reg_we,
+    input  wire [4:0]             debug_write_addr,
+    input  wire [DATA_WIDTH-1:0]   debug_write_data,
 
     // Estado Interno Exportado hacia DEBUG_UNIT para DUMP
     output wire [ADDR_WIDTH-1:0]  o_pc_if,          // PC en etapa IF
@@ -115,6 +118,9 @@ module PIPELINE #(
         .read_reg2      (instr_id[24:20]),    // Extrae rs2
         .write_reg      (rd_wb),              // rd que regresa desde WB
         .write_data     (write_data_wb),      // Selected WB result
+        .debug_we       (debug_reg_we && !clk_en), // Depuración solo con CPU pausada
+        .debug_write_addr(debug_write_addr),
+        .debug_write_data(debug_write_data),
         .read_data1     (rdata1_id),
         .read_data2     (rdata2_id),
         .debug_reg_addr (debug_reg_addr),

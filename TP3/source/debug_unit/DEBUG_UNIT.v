@@ -35,6 +35,11 @@ module DEBUG_UNIT #(
     output reg  [ADDR_WIDTH-1:0]  o_imem_addr,      // Dirección en IMEM
     output reg  [INSTR_WIDTH-1:0] o_imem_data,      // Instrucción a escribir
 
+    // Escritura inicial del banco, independiente de la ISA
+    output reg                    o_debug_reg_we,
+    output reg  [4:0]             o_debug_write_addr,
+    output reg  [DATA_WIDTH-1:0]  o_debug_write_data,
+
     // --- Entradas de Inspección desde el PIPELINE (Para DUMP) ---
     input  wire [ADDR_WIDTH-1:0]  i_pc_if,          // PC en etapa IF
     input  wire [ADDR_WIDTH-1:0]  i_pc_id,          // PC en etapa ID
@@ -62,6 +67,9 @@ module DEBUG_UNIT #(
     localparam [7:0] CMD_STEP       = 8'h03; // Ejecuta 1 ciclo de reloj (Step)
     localparam [7:0] CMD_RUN        = 8'h04; // Ejecuta en modo continuo
     localparam [7:0] CMD_DUMP_STATE = 8'h05; // Transmite el estado completo a la PC
+    localparam [7:0] CMD_INIT_REG   = 8'h06; // Índice + valor64 big-endian
+    localparam [7:0] NACK_REG_INDEX = 8'hE1;
+    localparam [7:0] NACK_INIT_LOCK = 8'hE2;
 
     // Estados de la FSM
     localparam [4:0] STATE_IDLE         = 5'd0;
@@ -77,6 +85,10 @@ module DEBUG_UNIT #(
     localparam [4:0] STATE_DUMP_SEND    = 5'd10;
     localparam [4:0] STATE_DUMP_NEXT    = 5'd11;
     localparam [4:0] STATE_SEND_ACK     = 5'd12;
+    localparam [4:0] STATE_WREG_ADDR    = 5'd13;
+    localparam [4:0] STATE_WREG_DATA    = 5'd14;
+    localparam [4:0] STATE_WREG_WRITE   = 5'd15;
+    localparam [4:0] STATE_WREG_COMMIT  = 5'd16;
 
     reg [4:0] state;
 
@@ -84,11 +96,19 @@ module DEBUG_UNIT #(
     reg [7:0]             wmem_addr_reg;
     reg [INSTR_WIDTH-1:0] wmem_data_reg;
     reg [7:0]             ack_code;
+    reg [7:0]             wreg_index;
+    reg [DATA_WIDTH-1:0]   wreg_value;
+    reg [2:0]             wreg_byte;
+    reg                   initial_window;
 
     // Contadores de DUMP
     reg [8:0] dump_idx;
     reg [7:0] byte_to_send;
     reg       run_mode;
+
+    // INTF_RX consume o_rx_rd en el flanco siguiente: no releer el byte anterior.
+    // En ese flanco puede guardar un byte nuevo, disponible tras esta espera.
+    wire rx_available = !i_rx_empty && !o_rx_rd;
 
     // Cálculos para la extracción en ráfaga del Banco de Registros (32 reg x 8 bytes)
     wire [4:0] reg_num  = (dump_idx - 9'd80) >> 3;
@@ -174,6 +194,13 @@ module DEBUG_UNIT #(
             o_imem_addr       <= {ADDR_WIDTH{1'b0}};
             o_imem_data       <= {INSTR_WIDTH{1'b0}};
             o_debug_reg_addr  <= 5'b0;
+            o_debug_reg_we    <= 1'b0;
+            o_debug_write_addr <= 5'b0;
+            o_debug_write_data <= {DATA_WIDTH{1'b0}};
+            wreg_index        <= 8'b0;
+            wreg_value        <= {DATA_WIDTH{1'b0}};
+            wreg_byte         <= 3'b0;
+            initial_window    <= 1'b1;
             wmem_addr_reg     <= 8'h00;
             wmem_data_reg     <= {INSTR_WIDTH{1'b0}};
             ack_code          <= 8'h00;
@@ -183,6 +210,7 @@ module DEBUG_UNIT #(
             o_rx_rd          <= 1'b0;
             o_tx_wr          <= 1'b0;
             o_imem_we        <= 1'b0;
+            o_debug_reg_we   <= 1'b0;
             o_pipeline_reset <= 1'b0;
 
             if (run_mode)
@@ -190,7 +218,7 @@ module DEBUG_UNIT #(
 
             case (state)
                 STATE_IDLE: begin
-                    if (!i_rx_empty) begin
+                    if (rx_available) begin
                         o_rx_rd <= 1'b1;
                         case (i_rx_data)
                             CMD_HALT: begin
@@ -200,6 +228,7 @@ module DEBUG_UNIT #(
                                 state             <= STATE_SEND_ACK;
                             end
                             CMD_RESET: begin
+                                initial_window    <= 1'b1;
                                 run_mode          <= 1'b0;
                                 o_pipeline_clk_en <= 1'b0;
                                 o_pipeline_reset  <= 1'b1;
@@ -212,12 +241,14 @@ module DEBUG_UNIT #(
                                 state             <= STATE_WMEM_ADDR;
                             end
                             CMD_STEP: begin
+                                initial_window    <= 1'b0;
                                 run_mode          <= 1'b0;
                                 o_pipeline_clk_en <= 1'b1;
                                 ack_code          <= CMD_STEP;
                                 state             <= STATE_STEP_PULSE;
                             end
                             CMD_RUN: begin
+                                initial_window    <= 1'b0;
                                 run_mode          <= 1'b1;
                                 o_pipeline_clk_en <= 1'b1;
                                 ack_code          <= CMD_RUN;
@@ -228,6 +259,10 @@ module DEBUG_UNIT #(
                                 o_debug_reg_addr <= 5'b0;
                                 state            <= STATE_DUMP_SETUP;
                             end
+                            CMD_INIT_REG: begin
+                                // No pausar ni resetear: consumir toda la trama incluso si se rechaza.
+                                state <= STATE_WREG_ADDR;
+                            end
                             default: state <= STATE_IDLE;
                         endcase
                     end
@@ -235,7 +270,7 @@ module DEBUG_UNIT #(
 
                 // Recepción de dirección y los 4 bytes de la instrucción
                 STATE_WMEM_ADDR: begin
-                    if (!i_rx_empty) begin
+                    if (rx_available) begin
                         o_rx_rd       <= 1'b1;
                         wmem_addr_reg <= i_rx_data;
                         state         <= STATE_WMEM_B3;
@@ -243,7 +278,7 @@ module DEBUG_UNIT #(
                 end
 
                 STATE_WMEM_B3: begin
-                    if (!i_rx_empty) begin
+                    if (rx_available) begin
                         o_rx_rd               <= 1'b1;
                         wmem_data_reg[31:24] <= i_rx_data;
                         state                 <= STATE_WMEM_B2;
@@ -251,7 +286,7 @@ module DEBUG_UNIT #(
                 end
 
                 STATE_WMEM_B2: begin
-                    if (!i_rx_empty) begin
+                    if (rx_available) begin
                         o_rx_rd               <= 1'b1;
                         wmem_data_reg[23:16] <= i_rx_data;
                         state                 <= STATE_WMEM_B1;
@@ -259,7 +294,7 @@ module DEBUG_UNIT #(
                 end
 
                 STATE_WMEM_B1: begin
-                    if (!i_rx_empty) begin
+                    if (rx_available) begin
                         o_rx_rd              <= 1'b1;
                         wmem_data_reg[15:8] <= i_rx_data;
                         state                <= STATE_WMEM_B0;
@@ -267,7 +302,7 @@ module DEBUG_UNIT #(
                 end
 
                 STATE_WMEM_B0: begin
-                    if (!i_rx_empty) begin
+                    if (rx_available) begin
                         o_rx_rd             <= 1'b1;
                         wmem_data_reg[7:0]  <= i_rx_data;
                         state               <= STATE_WMEM_WRITE;
@@ -281,6 +316,42 @@ module DEBUG_UNIT #(
                     ack_code    <= 8'hAA; // Confirmación de grabación exitosa
                     state       <= STATE_SEND_ACK;
                 end
+
+                STATE_WREG_ADDR: begin
+                    if (rx_available) begin
+                        o_rx_rd    <= 1'b1;
+                        wreg_index <= i_rx_data; // Validar los 8 bits antes de reducir a 5.
+                        wreg_byte  <= 3'd0;
+                        state      <= STATE_WREG_DATA;
+                    end
+                end
+
+                STATE_WREG_DATA: begin
+                    if (rx_available) begin
+                        o_rx_rd    <= 1'b1;
+                        wreg_value <= {wreg_value[DATA_WIDTH-9:0], i_rx_data};
+                        wreg_byte  <= wreg_byte + 1'b1;
+                        if (wreg_byte == 3'd7) state <= STATE_WREG_WRITE;
+                    end
+                end
+
+                STATE_WREG_WRITE: begin
+                    state <= STATE_SEND_ACK;
+                    if (wreg_index == 8'd0 || wreg_index > 8'd31) begin
+                        ack_code <= NACK_REG_INDEX;
+                    end else if (!initial_window || run_mode || o_pipeline_clk_en) begin
+                        ack_code <= NACK_INIT_LOCK;
+                    end else begin
+                        o_debug_reg_we     <= 1'b1;
+                        o_debug_write_addr <= wreg_index[4:0];
+                        o_debug_write_data <= wreg_value;
+                        ack_code           <= CMD_INIT_REG;
+                        state              <= STATE_WREG_COMMIT;
+                    end
+                end
+
+                // El banco consume we en este flanco; ACK se emite después del commit.
+                STATE_WREG_COMMIT: state <= STATE_SEND_ACK;
 
                 STATE_RESET_PULSE: begin
                     o_pipeline_reset <= 1'b1;

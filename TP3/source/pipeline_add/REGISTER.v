@@ -10,6 +10,9 @@ module REGISTER #(
     input  wire [4:0]            read_reg2,     // rs2 (bits [24:20] de la instrucción)
     input  wire [4:0]            write_reg,     // rd proveniente de MEM/WB
     input  wire [DATA_WIDTH-1:0] write_data,    // Dato a escribir proveniente de MEM/WB
+    input  wire                  debug_we,
+    input  wire [4:0]            debug_write_addr,
+    input  wire [DATA_WIDTH-1:0] debug_write_data,
     output wire [DATA_WIDTH-1:0] read_data1,    // Dato leído de rs1 hacia ID/EX
     output wire [DATA_WIDTH-1:0] read_data2,    // Dato leído de rs2 hacia ID/EX
 
@@ -31,6 +34,8 @@ module REGISTER #(
             for (i = 0; i < 32; i = i + 1) begin
                 registers[i] <= {DATA_WIDTH{1'b0}};
             end
+        end else if (debug_we && (debug_write_addr != 5'b0)) begin
+            registers[debug_write_addr] <= debug_write_data;
         end else if (reg_write && (write_reg != 5'b0)) begin
             registers[write_reg] <= write_data;
         end
